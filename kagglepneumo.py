@@ -4,12 +4,17 @@ from PIL import Image
 import argparse
 import os
 import random
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, models
+from keras.preprocessing.image import img_to_array
+from keras.preprocessing.image import  ImageDataGenerator
 
 
 def get_arg():
     parser = argparse.ArgumentParser(description='Neural network used to predict pneumonia from lungs radiographies')
-    parser.add_argument('data', nargs=3, metavar='data', type=str, help="The data to be used (train set, test set and"
-                                                                        "validation set)")
+    parser.add_argument('data', nargs=3, metavar='data', type=str, help="The datas to be used (train set, test set and"
+                                                                        " validation set)")
     return parser.parse_args()
 
 
@@ -40,7 +45,7 @@ def fill_up_array(path, images, label, array):
 
 
 def array_image(path):
-    print("      making array of image in process...")
+    print("      making array of images in process...")
     image_array = []
     normal_list = get_images_name(get_path(path))
     pneumonia_list = get_images_name(get_path(path, "Pneumonia"))
@@ -64,8 +69,30 @@ def reshaping(array):
     ytrain = []
     for image, label in array:
         xtrain.append(image)
-        ytrain.append(label)
+        if label == "NORMAL":
+            ytrain.append(0)
+        else:
+            ytrain.append(1)
     return np.array(xtrain), np.array(ytrain)
+
+
+def get_data(path):
+    datagen = ImageDataGenerator(rescale=1. / 255)
+    dataset = datagen.flow_from_directory(path, target_size=(150, 150), batch_size=16,
+                                                     class_mode='binary')
+    return dataset
+
+
+def modelp(shape):
+    model = models.Sequential()
+    model.add(layers.Conv2D(32, kernel_size=(3, 3), activation="relu"))
+    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
+    model.add(layers.Conv2D(64, kernel_size=(3, 3), activation="relu"))
+    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
+    model.add(layers.Flatten())
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(2, activation="softmax"))
+    return model
 
 
 def main():
@@ -73,17 +100,26 @@ def main():
     args = get_arg()
     print("Retrieving radiography datas :")
     print("   retrieving training data")
-    array_train = array_image(args.data[0])
+    xtrain = get_data(args.data[0])
     print("   retrieving testing data")
-    array_test = array_image(args.data[1])
+    xtest = get_data(args.data[1])
     print("   retrieving validation data")
-    array_val = array_image(args.data[2])
+    xval = get_data(args.data[2])
     print("data retrieved")
-    image_printing(array_train[0][0], array_train[0][1])
-    print("Reshaping data")
-    xtrain, ytrain = reshaping(array_train)
-    xtest, ytest = reshaping(array_test)
-    xval, yval = reshaping(array_val)
+    print(xtrain.labels)
+    print(xtest.labels)
+    print(xval.labels)
+    #image_printing(array_train[0][0], array_train[0][1])
+    print("Reshaping done")
+    print("Writing model:")
+    input_shape = (28, 28, 1)
+    print("  categorizing done...")
+    model1 = modelp(input_shape)
+    model1.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+    history1 = model1.fit(xtrain, steps_per_epoch=128, epochs=15, validation_data=xtest)
+    _, acc = model1.evaluate(xtest, verbose=1)
+    print('> %.3f' % (acc * 100.0))
+    print(history1.history.keys())
     print("Program done")
 
 
