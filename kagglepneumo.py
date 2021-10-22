@@ -1,14 +1,8 @@
-import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
 import argparse
 import os
-import random
-import tensorflow as tf
-from tensorflow import keras
+import cv2
 from tensorflow.keras import layers, models
-from keras.preprocessing.image import img_to_array
-from keras.preprocessing.image import  ImageDataGenerator
 
 
 def get_arg():
@@ -18,72 +12,7 @@ def get_arg():
     return parser.parse_args()
 
 
-def get_path(path, state='Normal'):
-    full_path = False
-    if state == "Normal":
-        full_path = path + 'NORMAL/'
-    if state == "Pneumonia":
-        full_path = path + 'PNEUMONIA/'
-    return full_path
-
-
-def get_image(pathi):
-    if pathi:
-        img = Image.open(pathi)
-        return img.resize((250, 250))
-
-
-def get_images_name(path):
-    image_list = sorted(os.listdir(path))
-    return image_list
-
-
-def fill_up_array(path, images, label, array):
-    for image in images:
-        img = get_image(path + label + '/' + image)
-        array.append([img, label])
-
-
-def array_image(path):
-    print("      making array of images in process...")
-    image_array = []
-    normal_list = get_images_name(get_path(path))
-    pneumonia_list = get_images_name(get_path(path, "Pneumonia"))
-    fill_up_array(path, normal_list, "NORMAL", image_array)
-    fill_up_array(path, pneumonia_list, "PNEUMONIA", image_array)
-    random.shuffle(image_array)
-    return image_array
-
-
-def image_printing(image, ref):
-    print("image printing")
-    plt.figure()
-    plt.imshow(image, cmap='gray')
-    plt.title(ref)
-    plt.show()
-    print("image shown")
-
-
-def reshaping(array):
-    xtrain = []
-    ytrain = []
-    for image, label in array:
-        xtrain.append(image)
-        if label == "NORMAL":
-            ytrain.append(0)
-        else:
-            ytrain.append(1)
-    return np.array(xtrain), np.array(ytrain)
-
-
-def get_data(path):
-    datagen = ImageDataGenerator(rescale=1. / 255)
-    dataset = datagen.flow_from_directory(path, target_size=(150, 150), batch_size=16,
-                                                     class_mode='binary')
-    return dataset
-
-
-def modelp(shape):
+def modelp():
     model = models.Sequential()
     model.add(layers.Conv2D(32, kernel_size=(3, 3), activation="relu"))
     model.add(layers.MaxPooling2D(pool_size=(2, 2)))
@@ -95,31 +24,69 @@ def modelp(shape):
     return model
 
 
+def get_data(path, size):
+    data = []
+    labels = ["PNEUMONIA", "NORMAL"]
+    for label in labels:
+        fullpath = os.path.join(path, label)
+        class_num = labels.index(label)
+        for img in os.listdir(fullpath):
+            arr_img = cv2.imread(os.path.join(fullpath, img), cv2.IMREAD_GRAYSCALE)
+            arr_res = cv2.resize(arr_img, (size, size))
+            data.append([arr_res, class_num])
+    return np.array(data)
+
+
+def preprocessing_data(data):
+    print("   Preprocessing ongoing...")
+    x_data = []
+    y_data = []
+    for img, label in data:
+        x_data.append(img)
+        y_data.append(label)
+    return x_data, y_data
+
+
+def data_normalization(xdata, ydata, size):
+    print("   Normalization onngoing")
+    xdata = np.array(xdata) / 255
+    xdata = xdata.reshape(-1, size, size, 1)
+    return xdata, np.array(ydata)
+
+
 def main():
     print("Program launched")
     args = get_arg()
-    print("Retrieving radiography datas :")
-    print("   retrieving training data")
-    xtrain = get_data(args.data[0])
-    print("   retrieving testing data")
-    xtest = get_data(args.data[1])
-    print("   retrieving validation data")
-    xval = get_data(args.data[2])
-    print("data retrieved")
-    print(xtrain.labels)
-    print(xtest.labels)
-    print(xval.labels)
-    #image_printing(array_train[0][0], array_train[0][1])
-    print("Reshaping done")
-    print("Writing model:")
-    input_shape = (28, 28, 1)
-    print("  categorizing done...")
-    model1 = modelp(input_shape)
-    model1.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
-    history1 = model1.fit(xtrain, steps_per_epoch=128, epochs=15, validation_data=xtest)
-    _, acc = model1.evaluate(xtest, verbose=1)
-    print('> %.3f' % (acc * 100.0))
+    print("Retrieving data")
+    set_train = get_data(args.data[0], 150)
+    print("   training data retrieved")
+    set_test = get_data(args.data[1], 150)
+    print("   testing data retrieved")
+    set_val = get_data(args.data[2], 150)
+    print("   validation data retrieved")
+    print("Preprocessing starting...")
+    xtrain, ytrain = preprocessing_data(set_train)
+    print("   training preprocessing over")
+    xtest, ytest = preprocessing_data(set_test)
+    print("   testing preprocessing over")
+    xval, yval = preprocessing_data(set_val)
+    print("   validation preprocessing over")
+    print("Normalisation starting...")
+    x_train, y_train = data_normalization(xtrain, ytrain, 150)
+    print("   training normalization over")
+    x_test, y_test = data_normalization(xtest, ytest, 150)
+    print("   testing normalization over")
+    x_val, y_val = data_normalization(xval, yval, 150)
+    print("Writing model...")
+    model1 = modelp()
+    model1.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+    print("Model learning...")
+    history1 = model1.fit(x_train, y_train, batch_size=128, epochs=15, validation_data=(x_val, y_val))
     print(history1.history.keys())
+    print("Model evaluation:")
+    eval_model = model1.evaluate(x_test, y_test)
+    print(f"Model loss : {eval_model[0]}")
+    print(f"Model accuracy : {eval_model[1]*100}%")
     print("Program done")
 
 
