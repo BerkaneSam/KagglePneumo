@@ -3,6 +3,8 @@ import argparse
 import os
 import cv2
 from tensorflow.keras import layers, models
+from tensorflow.keras.applications.resnet50 import ResNet50
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
 
 def get_arg():
@@ -18,10 +20,35 @@ def modelp():
     model.add(layers.MaxPooling2D(pool_size=(2, 2)))
     model.add(layers.Conv2D(64, kernel_size=(3, 3), activation="relu"))
     model.add(layers.MaxPooling2D(pool_size=(2, 2)))
+    model.add(layers.Conv2D(128, kernel_size=(3, 3), activation="relu"))
+    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
+    model.add(layers.Conv2D(32, kernel_size=(3, 3), activation="relu"))
+    model.add(layers.MaxPooling2D(pool_size=(2, 2)))
     model.add(layers.Flatten())
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(64, activation="relu"))
     model.add(layers.Dropout(0.5))
     model.add(layers.Dense(2, activation="softmax"))
     return model
+
+
+def modelt():
+    shape = (150, 150, 3)
+    model = ResNet50(include_top=False, weights='imagenet', input_tensor=layers.Input(shape=shape))
+    #mod_input = layers.Input(shape=shape)
+    #beg = model(mod_input)
+    mod_input = model.output
+    conv1 = layers.Conv2D(32, kernel_size=(3, 3), activation="relu")(mod_input)
+    pool1 = layers.AveragePooling2D(pool_size=(2, 2))(conv1)
+    conv2 = layers.Conv2D(64, kernel_size=(3, 3), activation="relu")(pool1)
+    pool2 = layers.AveragePooling2D(pool_size=(2, 2))(conv2)
+    flat = layers.Flatten()(pool2)
+    dp1 = layers.Dropout(0.5)(flat)
+    den1 = layers.Dense(2, activation="relu")(dp1)
+    dp2 = layers.Dropout(0.5)(den1)
+    output = layers.Dense(2, activation="softmax")(dp2)
+    t_model = models.Model(model.input, output)
+    return t_model
 
 
 def get_data(path, size):
@@ -56,6 +83,7 @@ def data_normalization(xdata, ydata, size):
 
 def main():
     print("Program launched")
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
     args = get_arg()
     print("Retrieving data")
     set_train = get_data(args.data[0], 150)
@@ -77,11 +105,13 @@ def main():
     x_test, y_test = data_normalization(xtest, ytest, 150)
     print("   testing normalization over")
     x_val, y_val = data_normalization(xval, yval, 150)
+    data_augmented = ImageDataGenerator(rotation_range=10, zoom_range=0.1, width_shift_range=0.1, height_shift_range=0.1
+                                        , shear_range=0.15, horizontal_flip=True, fill_mode="nearest")
     print("Writing model...")
     model1 = modelp()
     model1.compile(loss="sparse_categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
     print("Model learning...")
-    history1 = model1.fit(x_train, y_train, batch_size=128, epochs=15, validation_data=(x_val, y_val))
+    history1 = model1.fit(data_augmented.flow(x_train, y_train, batch_size=128), batch_size=128, epochs=15, validation_data=data_augmented.flow(x_val, y_val))
     print(history1.history.keys())
     print("Model evaluation:")
     eval_model = model1.evaluate(x_test, y_test)
